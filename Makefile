@@ -1,5 +1,5 @@
 PLUGIN_NAME  := plymouth
-PLUGINS_PATH := $(DESTDIR)/lib/rc/plugins
+PLUGINS_PATH := $(DESTDIR)/usr/lib/rc/plugins
 PKG_NAME     := $(PLUGIN_NAME)-openrc-plugin
 PKG_VERSION  := 0.1.3
 PKG          := $(PKG_NAME)-$(PKG_VERSION)
