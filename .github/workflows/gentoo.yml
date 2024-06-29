@@ -1,0 +1,48 @@
+name: Gentoo Build
+run-name: Gentoo Build
+on: [push, pull_request]
+jobs:
+    "gentoo-build":
+        runs-on: ubuntu-latest
+        container:
+            image: gentoo/stage3:nomultilib
+        steps:
+        - name: Install dependencies
+          run: >
+            emerge-webrsync && getuto &&
+            echo "sys-boot/plymouth-openrc-plugin" > /etc/portage/package.accept_keywords/foo &&
+            echo "dev-python/pillow truetype" > /etc/portage/package.use/pillow &&
+            USE="-harfbuzz" emerge media-libs/freetype &&
+            emerge --autounmask-continue --getbinpkg --onlydeps sys-boot/plymouth-openrc-plugin &&
+            emerge --getbinpkg dev-vcs/git
+        - name: Check out repository code
+          uses: actions/checkout@v4
+        - name: set git safe directory
+          run: git config --global --add safe.directory ${GITHUB_WORKSPACE}
+        - name: configure meson build
+          run:  meson setup builddir
+        - name: run build
+          run: ninja -C builddir
+
+    "gentoo-build-clang":
+        runs-on: ubuntu-latest
+        container:
+            image: gentoo/stage3:nomultilib
+        steps:
+            - name: Install dependencies
+              run: >
+                emerge-webrsync && getuto &&
+                echo "sys-boot/plymouth-openrc-plugin" > /etc/portage/package.accept_keywords/foo &&
+                echo "dev-python/pillow truetype" > /etc/portage/package.use/pillow &&
+                USE="-harfbuzz" emerge media-libs/freetype &&
+                emerge --autounmask-continue --getbinpkg --onlydeps sys-boot/plymouth-openrc-plugin &&
+                emerge --getbinpkg sys-devel/clang sys-devel/lld dev-vcs/git &&
+                env-update
+            - name: Check out repository code
+              uses: actions/checkout@v4
+            - name: set git safe directory
+              run: git config --global --add safe.directory ${GITHUB_WORKSPACE}
+            - name: configure meson build
+              run: . /etc/profile && CC=clang CC_LD=lld meson setup builddir
+            - name: run build
+              run: . /etc/profile && ninja -C builddir
