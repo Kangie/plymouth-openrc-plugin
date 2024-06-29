@@ -25,5 +25,5 @@ plugin = shared_library(
     dependencies: dependencies,
     name_prefix: '',
     install: true,
-    install_dir: join_paths(get_option('libdir'), 'rc' / 'plugins' / 'plymouth'),
+    install_dir: join_paths(get_option('libdir'), 'rc' / 'plugins'),
 )
