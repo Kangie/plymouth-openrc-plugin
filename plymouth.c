@@ -26,6 +26,7 @@
 #include <unistd.h>
 #include <sys/stat.h>
 
+#include "config.h"
 
 #ifdef DEBUG
 #    define DBG(x) einfo("[plymouth-plugin] " x)
@@ -55,7 +56,7 @@ int command(const char* cmd)
 {
     int rv = system(cmd);
 
-#if DEBUG
+#ifdef DEBUG
     if(rv != 0) {
         ewarn("[plymouth-plugin] command(\"%s\"): rv=%d", cmd, rv);
     }

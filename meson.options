@@ -1,0 +1,12 @@
+option(
+    'pid-file',
+    type: 'string',
+    description: 'Path to PID file (usually ${RUN_DIR}/plymouth-openrc-plugin.pid)',
+    value: '/run/plymouth/plymouth-openrc-plugin.pid',
+)
+option(
+    'run-dir',
+    type: 'string',
+    description: 'Run directory',
+    value: '/run/plymouth',
+)
