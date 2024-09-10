@@ -10,10 +10,11 @@ jobs:
         - name: Install dependencies
           run: >
             emerge-webrsync && getuto &&
+            echo "sys-apps/openrc" > /etc/portage/package.accept_keywords/openrc &&
             echo "sys-boot/plymouth-openrc-plugin" > /etc/portage/package.accept_keywords/foo &&
             echo "dev-python/pillow truetype" > /etc/portage/package.use/pillow &&
             USE="-harfbuzz" emerge media-libs/freetype &&
-            emerge --autounmask-continue --getbinpkg --onlydeps sys-boot/plymouth-openrc-plugin &&
+            emerge --autounmask-continue --getbinpkg --onlydeps sys-boot/plymouth-openrc-plugin sys-apps/openrc &&
             emerge --getbinpkg dev-vcs/git
         - name: Check out repository code
           uses: actions/checkout@v4
@@ -32,10 +33,11 @@ jobs:
             - name: Install dependencies
               run: >
                 emerge-webrsync && getuto &&
+                echo "sys-apps/openrc" > /etc/portage/package.accept_keywords/openrc &&
                 echo "sys-boot/plymouth-openrc-plugin" > /etc/portage/package.accept_keywords/foo &&
                 echo "dev-python/pillow truetype" > /etc/portage/package.use/pillow &&
                 USE="-harfbuzz" emerge media-libs/freetype &&
-                emerge --autounmask-continue --getbinpkg --onlydeps sys-boot/plymouth-openrc-plugin &&
+                emerge --autounmask-continue --getbinpkg --onlydeps sys-boot/plymouth-openrc-plugin sys-apps/openrc &&
                 emerge --getbinpkg sys-devel/clang sys-devel/lld dev-vcs/git &&
                 env-update
             - name: Check out repository code
