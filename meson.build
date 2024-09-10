@@ -2,12 +2,15 @@ project(
     'plymouth-openrc-plugin',
     'c',
     version: '0.2.0',
+    default_options: [
+        'prefix=/usr',
+    ],
 )
 
-dependencies = [
-    dependency('einfo', required: true),
-    dependency('openrc', required: true),
-]
+einfo = dependency('einfo', required: true)
+openrc = dependency('openrc', version: '>=0.55', required: true )
+
+dependencies = [einfo, openrc]
 
 conf = configuration_data()
 conf.set('DEBUG', get_option('debug'))
@@ -25,5 +28,5 @@ plugin = shared_library(
     dependencies: dependencies,
     name_prefix: '',
     install: true,
-    install_dir: join_paths(get_option('libdir'), 'rc' / 'plugins'),
+    install_dir: openrc.get_pkgconfig_variable('rc_path') / 'plugins',
 )
