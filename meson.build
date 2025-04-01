@@ -5,6 +5,7 @@ project(
     default_options: [
         'prefix=/usr',
     ],
+    meson_version: '>=1.1.0',
 )
 
 einfo = dependency('einfo', required: true)
