@@ -28,5 +28,5 @@ plugin = shared_library(
     dependencies: dependencies,
     name_prefix: '',
     install: true,
-    install_dir: openrc.get_pkgconfig_variable('pluginsdir'),
+    install_dir: openrc.get_variable('pluginsdir'),
 )
