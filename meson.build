@@ -8,7 +8,7 @@ project(
 )
 
 einfo = dependency('einfo', required: true)
-openrc = dependency('openrc', version: '>=0.55', required: true )
+openrc = dependency('openrc', version: '>=0.56', required: true )
 
 dependencies = [einfo, openrc]
 
@@ -28,5 +28,5 @@ plugin = shared_library(
     dependencies: dependencies,
     name_prefix: '',
     install: true,
-    install_dir: openrc.get_pkgconfig_variable('rc_path') / 'plugins',
+    install_dir: openrc.get_pkgconfig_variable('pluginsdir'),
 )
