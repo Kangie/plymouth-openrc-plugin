@@ -32,11 +32,17 @@
 
 #include "config.h"
 
+#define PLUGIN_NAME "[plymouth-plugin]"
+
 #ifdef DEBUG
-#    define DBG(fmt, ...) einfo("[plymouth-plugin] " fmt, ##__VA_ARGS__)
+#    define DBG(fmt, ...) einfo(PLUGIN_NAME " " fmt, ##__VA_ARGS__)
 #else
 #    define DBG(fmt, ...) do { (void)sizeof(fmt); } while (0)
 #endif
+
+#define PLY_INFO(fmt, ...)  einfo(PLUGIN_NAME " " fmt, ##__VA_ARGS__)
+#define PLY_WARN(fmt, ...)  ewarn(PLUGIN_NAME " " fmt, ##__VA_ARGS__)
+#define PLY_ERROR(fmt, ...) eerror(PLUGIN_NAME " " fmt, ##__VA_ARGS__)
 
 #define BUFFER_SIZE 300
 #define RWDIR (R_OK | W_OK | X_OK)
@@ -62,7 +68,7 @@ int command(const char* cmd)
 
 #ifdef DEBUG
     if(rv != 0) {
-        ewarn("[plymouth-plugin] command(\"%s\"): rv=%d", cmd, rv);
+        PLY_WARN("command(\"%s\"): rv=%d", cmd, rv);
     }
 #endif
 
@@ -80,7 +86,7 @@ int commandf(const char* cmd, ...)
     rv = vsnprintf(buffer, BUFFER_SIZE, cmd, ap);
     va_end(ap);
     if(rv >= BUFFER_SIZE) {
-        eerror("[plymouth-plugin] command(\"%s\"): buffer overflow", buffer);
+        PLY_ERROR("command(\"%s\"): buffer overflow", buffer);
         return -1;
     }
 
@@ -126,7 +132,7 @@ bool ply_start(int mode)
 
         if(access(RUN_DIR, RWDIR) != 0) {
             if(mkdir(RUN_DIR, 0755) != 0) {
-                eerror("[plymouth-plugin] Couldn't create " RUN_DIR);
+                PLY_ERROR("Couldn't create " RUN_DIR);
                 return false;
             }
         }
@@ -163,7 +169,7 @@ bool ply_start(int mode)
         if (rv == 0) {
             int rv_splash = command("/bin/plymouth --show-splash");
             if (rv_splash != 0) {
-                eerror("[plymouth-plugin] plymouth --show-splash failed: rc=%d", rv_splash);
+                PLY_ERROR("plymouth --show-splash failed: rc=%d", rv_splash);
                 return false;
             }
         }
@@ -185,7 +191,7 @@ bool ply_update_rootfs_rw()
 
     if(access("/var/lib/plymouth", rwdir) != 0
             || access("/var/log", rwdir) != 0) {
-        eerror("[plymouth-plugin] /var/lib/plymouth and /var/log need to be "
+        PLY_ERROR("/var/lib/plymouth and /var/log need to be "
                 "writable at this stage, but are not!");
         return false;
     }
