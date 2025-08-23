@@ -1,50 +1,95 @@
 name: Gentoo Build
 run-name: Gentoo Build
 on: [push, pull_request]
-jobs:
-    "gentoo-build":
-        runs-on: ubuntu-latest
-        container:
-            image: gentoo/stage3:nomultilib
-        steps:
-        - name: Install dependencies
-          run: >
-            emerge-webrsync && getuto &&
-            echo "sys-apps/openrc" > /etc/portage/package.accept_keywords/openrc &&
-            echo "sys-boot/plymouth-openrc-plugin" > /etc/portage/package.accept_keywords/foo &&
-            echo "dev-python/pillow truetype" > /etc/portage/package.use/pillow &&
-            USE="-harfbuzz" emerge media-libs/freetype &&
-            emerge --autounmask-continue --getbinpkg --onlydeps sys-boot/plymouth-openrc-plugin sys-apps/openrc &&
-            emerge --getbinpkg dev-vcs/git
-        - name: Check out repository code
-          uses: actions/checkout@v4
-        - name: set git safe directory
-          run: git config --global --add safe.directory ${GITHUB_WORKSPACE}
-        - name: configure meson build
-          run:  meson setup builddir
-        - name: run build
-          run: ninja -C builddir
 
-    "gentoo-build-clang":
-        runs-on: ubuntu-latest
-        container:
-            image: gentoo/stage3:nomultilib
-        steps:
-            - name: Install dependencies
-              run: >
-                emerge-webrsync && getuto &&
-                echo "sys-apps/openrc" > /etc/portage/package.accept_keywords/openrc &&
-                echo "sys-boot/plymouth-openrc-plugin" > /etc/portage/package.accept_keywords/foo &&
-                echo "dev-python/pillow truetype" > /etc/portage/package.use/pillow &&
-                USE="-harfbuzz" emerge media-libs/freetype &&
-                emerge --autounmask-continue --getbinpkg --onlydeps sys-boot/plymouth-openrc-plugin sys-apps/openrc &&
-                emerge --getbinpkg sys-devel/clang sys-devel/lld dev-vcs/git &&
-                env-update
-            - name: Check out repository code
-              uses: actions/checkout@v4
-            - name: set git safe directory
-              run: git config --global --add safe.directory ${GITHUB_WORKSPACE}
-            - name: configure meson build
-              run: . /etc/profile && CC=clang CC_LD=lld meson setup builddir
-            - name: run build
-              run: . /etc/profile && ninja -C builddir
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build:
+    name: Gentoo build (${{ matrix.cc }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    container:
+      image: gentoo/stage3:nomultilib
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - name: Cache distfiles
+        uses: actions/cache@v4
+        with:
+          path: /var/cache/distfiles
+          key: distfiles-${{ runner.os }}-${{ hashFiles('**/meson.build', '**/meson.options') }}
+          restore-keys: |
+            distfiles-${{ runner.os }}-
+
+      - name: Install toolchain and deps
+        run: |
+          set -euxo pipefail
+          emerge-webrsync
+          getuto
+          env-update && . /etc/profile
+          mkdir -p /etc/portage/package.accept_keywords /etc/portage/package.use
+          echo "sys-apps/openrc" > /etc/portage/package.accept_keywords/openrc
+          echo "sys-boot/plymouth-openrc-plugin" > /etc/portage/package.accept_keywords/plymouth-openrc-plugin
+          echo "dev-python/pillow truetype" > /etc/portage/package.use/pillow
+          USE="-harfbuzz" emerge --quiet media-libs/freetype
+          emerge --getbinpkg --autounmask-continue --onlydeps sys-boot/plymouth-openrc-plugin
+          packages=(
+            sys-apps/openrc
+            dev-vcs/git
+          )
+          if [[ "${{ matrix.cc }}" == "clang" ]]; then
+            packages+=(llvm-core/clang llvm-core/lld)
+          fi
+          emerge --getbinpkg "${packages[@]}"
+          env-update && . /etc/profile
+
+      - name: Check out repository code
+        uses: actions/checkout@v4
+
+      - name: Set git safe directory
+        run: git config --global --add safe.directory "${GITHUB_WORKSPACE}"
+
+      - name: Configure (meson)
+        run: |
+          set -euxo pipefail
+          . /etc/profile
+          if [[ "${{ matrix.cc }}" == "clang" ]]; then
+            export CC=clang
+            export CC_LD=lld
+            export AR=llvm-ar
+            export NM=llvm-nm
+            export RANLIB=llvm-ranlib
+            export STRIP=llvm-strip
+          else
+            export CC=gcc
+          fi
+          meson setup --wipe builddir
+
+      - name: Build
+        run: |
+          set -euxo pipefail
+          . /etc/profile
+          ninja -C builddir -v
+
+      - name: Upload build logs and artefacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: meson-logs-${{ matrix.cc }}
+          path: |
+            builddir/meson-logs/**
+            builddir/build.ninja
+            builddir/plymouth.so
+          if-no-files-found: warn
