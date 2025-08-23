@@ -25,6 +25,8 @@
 #include <string.h>
 #include <unistd.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
+#include <errno.h>
 
 #include <stdbool.h>
 
@@ -116,6 +118,8 @@ bool ply_quit(int mode)
 bool ply_start(int mode)
 {
     int rv = 0;
+    const char* mode_str = (mode == PLY_MODE_BOOT) ? "boot" :
+                           (mode == PLY_MODE_SHUTDOWN) ? "shutdown" : "unknown";
 
     if(!ply_ping()) {
         ebegin("Starting plymouthd");
@@ -136,10 +140,33 @@ bool ply_start(int mode)
         else
             assert(0 && "Unknown mode");
 #undef PLYD
-        eend(rv, "");
+        char status_msg[160];
+        status_msg[0] = '\0';
+        if (rv != 0) {
+            if (rv == -1) {
+                snprintf(status_msg, sizeof status_msg,
+                         "plymouthd(%s) failed: %s", mode_str, strerror(errno));
+            } else if (WIFEXITED(rv)) {
+                snprintf(status_msg, sizeof status_msg,
+                         "plymouthd(%s) failed: exit=%d", mode_str, WEXITSTATUS(rv));
+            } else if (WIFSIGNALED(rv)) {
+                snprintf(status_msg, sizeof status_msg,
+                         "plymouthd(%s) killed by signal %d%s",
+                         mode_str, WTERMSIG(rv), WCOREDUMP(rv) ? " (core dumped)" : "");
+            } else {
+                snprintf(status_msg, sizeof status_msg,
+                         "plymouthd(%s) failed: status=0x%x", mode_str, rv);
+            }
+        }
+        eend(rv, "%s", status_msg);
 
-        if((rv == 0) && command("/bin/plymouth --show-splash") != 0)
-            return false;
+        if (rv == 0) {
+            int rv_splash = command("/bin/plymouth --show-splash");
+            if (rv_splash != 0) {
+                eerror("[plymouth-plugin] plymouth --show-splash failed: rc=%d", rv_splash);
+                return false;
+            }
+        }
     }
 
     return true;
