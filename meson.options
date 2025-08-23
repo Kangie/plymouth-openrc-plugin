@@ -10,3 +10,15 @@ option(
     description: 'Run directory',
     value: '/run/plymouth',
 )
+option(
+    'plymouth-binary',
+    type: 'string',
+    description: 'Path to plymouth binary',
+    value: '/bin/plymouth',
+)
+option(
+    'plymouthd-binary',
+    type: 'string',
+    description: 'Path to plymouthd daemon binary',
+    value: '/sbin/plymouthd',
+)

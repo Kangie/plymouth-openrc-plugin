@@ -17,6 +17,8 @@ conf = configuration_data()
 conf.set('DEBUG', get_option('debug'))
 conf.set_quoted('PID_FILE', get_option('pid-file'))
 conf.set_quoted('RUN_DIR', get_option('run-dir'))
+conf.set_quoted('PLYMOUTH_BINARY', get_option('plymouth-binary'))
+conf.set_quoted('PLYMOUTHD_BINARY', get_option('plymouthd-binary'))
 
 configure_file(
     output: 'config.h',

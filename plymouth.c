@@ -17,8 +17,10 @@
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
 #include <assert.h>
+#include <ctype.h>
 #include <einfo.h>
 #include <rc.h>
+#include <spawn.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -44,8 +46,29 @@
 #define PLY_WARN(fmt, ...)  ewarn(PLUGIN_NAME " " fmt, ##__VA_ARGS__)
 #define PLY_ERROR(fmt, ...) eerror(PLUGIN_NAME " " fmt, ##__VA_ARGS__)
 
-#define BUFFER_SIZE 300
+#define MAX_SERVICE_NAME_LEN 64
 #define RWDIR (R_OK | W_OK | X_OK)
+
+// Plymouth binary paths
+#ifndef PLYMOUTH_BINARY
+#define PLYMOUTH_BINARY "/bin/plymouth"
+#endif
+
+#ifndef PLYMOUTHD_BINARY
+#define PLYMOUTHD_BINARY "/sbin/plymouthd"
+#endif
+
+// Plymouth command types
+typedef enum {
+    PLY_CMD_PING,
+    PLY_CMD_MESSAGE,
+    PLY_CMD_UPDATE_STATUS,
+    PLY_CMD_UPDATE_ROOTFS_RW,
+    PLY_CMD_SHOW_SPLASH,
+    PLY_CMD_QUIT,
+    PLY_CMD_QUIT_RETAIN,
+    PLY_CMD_START_DAEMON
+} ply_command_t;
 
 #ifndef RUN_DIR
 #define RUN_DIR "/run/plymouth"
@@ -61,48 +84,149 @@ enum {
     PLY_MODE_SHUTDOWN
 };
 
-
-int command(const char* cmd)
+// execute Plymouth commands using posix_spawn
+static int ply_execute_command(ply_command_t cmd_type, const char *arg1, const char *arg2, int mode)
 {
-    int rv = system(cmd);
+    extern char **environ;
+    pid_t pid;
+    int status;
+    char *args[16];  // Max args we'll need
+    int arg_count = 0;
+    bool is_daemon = false;
 
-#ifdef DEBUG
-    if(rv != 0) {
-        PLY_WARN("command(\"%s\"): rv=%d", cmd, rv);
+    // Static buffers for command arguments - must remain valid until posix_spawn completes
+    static char text_buf[MAX_SERVICE_NAME_LEN * 2 + 2];
+    static char status_buf[MAX_SERVICE_NAME_LEN + 16];
+
+    const char *mode_str = (mode == PLY_MODE_BOOT) ? "boot" :
+                          (mode == PLY_MODE_SHUTDOWN) ? "shutdown" : NULL;
+
+    // Build argument array based on command type
+    switch (cmd_type) {
+        case PLY_CMD_PING:
+            args[arg_count++] = (char*)PLYMOUTH_BINARY;
+            args[arg_count++] = "--ping";
+            break;
+
+        case PLY_CMD_MESSAGE:
+            if (!arg1 || !arg2) return -1;
+            args[arg_count++] = (char*)PLYMOUTH_BINARY;
+            args[arg_count++] = "message";
+            args[arg_count++] = "--text";
+            // Combine arg1 and arg2 into single text argument
+            snprintf(text_buf, sizeof(text_buf), "%s %s", arg1, arg2);
+            args[arg_count++] = text_buf;
+            break;
+
+        case PLY_CMD_UPDATE_STATUS:
+            if (!arg1 || !arg2) return -1;
+            args[arg_count++] = (char*)PLYMOUTH_BINARY;
+            args[arg_count++] = "update";
+            args[arg_count++] = "--status";
+            // Combine hook and name
+            snprintf(status_buf, sizeof(status_buf), "%s-%s", arg1, arg2);
+            args[arg_count++] = status_buf;
+            break;
+
+        case PLY_CMD_UPDATE_ROOTFS_RW:
+            args[arg_count++] = (char*)PLYMOUTH_BINARY;
+            args[arg_count++] = "update-root-fs";
+            args[arg_count++] = "--read-write";
+            break;
+
+        case PLY_CMD_SHOW_SPLASH:
+            args[arg_count++] = (char*)PLYMOUTH_BINARY;
+            args[arg_count++] = "--show-splash";
+            break;
+
+        case PLY_CMD_QUIT:
+            args[arg_count++] = (char*)PLYMOUTH_BINARY;
+            args[arg_count++] = "quit";
+            break;
+
+        case PLY_CMD_QUIT_RETAIN:
+            args[arg_count++] = (char*)PLYMOUTH_BINARY;
+            args[arg_count++] = "quit";
+            args[arg_count++] = "--retain-splash";
+            break;
+
+        case PLY_CMD_START_DAEMON:
+            if (!mode_str) {
+                PLY_ERROR("Invalid mode for daemon start: %d", mode);
+                return -1;
+            }
+            args[arg_count++] = (char*)PLYMOUTHD_BINARY;
+            args[arg_count++] = "--attach-to-session";
+            args[arg_count++] = "--pid-file";
+            args[arg_count++] = (char*)PID_FILE;
+            args[arg_count++] = "--mode";
+            args[arg_count++] = (char*)mode_str;
+            is_daemon = true;  // Mark this as a daemon process
+            break;
+
+        default:
+            PLY_ERROR("Unknown Plymouth command type: %d", cmd_type);
+            return -1;
     }
-#endif
 
-    return rv;
-}
+    // Null terminate the argument array
+    args[arg_count] = NULL;
 
+    if (arg_count > 0) {
+        DBG("Executing %s with %d args", args[0], arg_count - 1);
+    }
 
-int commandf(const char* cmd, ...)
-{
-    static char buffer[BUFFER_SIZE];
-    va_list ap;
-    int rv;
-
-    va_start(ap, cmd);
-    rv = vsnprintf(buffer, BUFFER_SIZE, cmd, ap);
-    va_end(ap);
-    if(rv >= BUFFER_SIZE) {
-        PLY_ERROR("command(\"%s\"): buffer overflow", buffer);
+    int spawn_result = posix_spawnp(&pid, args[0], NULL, NULL, args, environ);
+    if (spawn_result != 0) {
+        PLY_ERROR("posix_spawnp(%s) failed: %s", args[0], strerror(spawn_result));
         return -1;
     }
 
-    return command(buffer);
+    // For daemon processes, don't wait - just give it a moment to start
+    if (is_daemon) {
+        DBG("Started daemon process %d, not waiting for exit", (int)pid);
+
+        // Brief sleep to let daemon initialize
+        usleep(100000);  // 100ms
+
+        // Check if daemon is still running (didn't immediately crash)
+        int check_status;
+        pid_t check_result = waitpid(pid, &check_status, WNOHANG);
+
+        if (check_result == pid) {
+            // Process already exited - this is an error for a daemon
+            PLY_ERROR("Daemon %s exited immediately with status %d", args[0], check_status);
+            return check_status;
+        } else if (check_result == 0) {
+            // Process still running - success for a daemon
+            DBG("Daemon %s started successfully", args[0]);
+            return 0;
+        } else {
+            // waitpid error
+            PLY_ERROR("Failed to check daemon status: %s", strerror(errno));
+            return -1;
+        }
+    }
+
+    // For non-daemon processes, wait for completion as usual
+    if (waitpid(pid, &status, 0) == -1) {
+        PLY_ERROR("waitpid() failed: %s", strerror(errno));
+        return -1;
+    }
+
+    return status;
 }
 
 
 bool ply_message(const char* hook, const char* name)
 {
-    return (commandf("/bin/plymouth message --text=\"%s %s\"", hook, name) == 0);
+    return (ply_execute_command(PLY_CMD_MESSAGE, hook, name, 0) == 0);
 }
 
 
 bool ply_ping()
 {
-    return (system("/bin/plymouth --ping") == 0);
+    return (ply_execute_command(PLY_CMD_PING, NULL, NULL, 0) == 0);
 }
 
 
@@ -111,11 +235,13 @@ bool ply_quit(int mode)
     int rv = 0;
 
     if(mode == PLY_MODE_BOOT)
-        rv = command("/bin/plymouth quit");
+        rv = ply_execute_command(PLY_CMD_QUIT, NULL, NULL, 0);
     else if(mode == PLY_MODE_SHUTDOWN)
-        rv = command("/bin/plymouth quit --retain-splash");
-    else
-        assert(0 && "Unknown mode");
+        rv = ply_execute_command(PLY_CMD_QUIT_RETAIN, NULL, NULL, 0);
+    else {
+        PLY_ERROR("Invalid Plymouth mode for quit: %d", mode);
+        return false;
+    }
 
     return (rv == 0);
 }
@@ -130,22 +256,26 @@ bool ply_start(int mode)
     if(!ply_ping()) {
         ebegin("Starting plymouthd");
 
+        // Ensure run directory exists with proper permissions
         if(access(RUN_DIR, RWDIR) != 0) {
             if(mkdir(RUN_DIR, 0755) != 0) {
-                PLY_ERROR("Couldn't create " RUN_DIR);
+                PLY_ERROR("Couldn't create %s: %s", RUN_DIR, strerror(errno));
+                eend(1, NULL);
                 return false;
             }
+            DBG("Created run directory %s", RUN_DIR);
         }
 
-#define PLYD "/sbin/plymouthd --attach-to-session --pid-file=" PID_FILE \
-    " --mode="
-        if(mode == PLY_MODE_BOOT)
-            rv = command(PLYD "boot");
-        else if(mode == PLY_MODE_SHUTDOWN)
-            rv = command(PLYD "shutdown");
-        else
-            assert(0 && "Unknown mode");
-#undef PLYD
+        // Validate mode before proceeding
+        if(mode != PLY_MODE_BOOT && mode != PLY_MODE_SHUTDOWN) {
+            PLY_ERROR("Invalid Plymouth mode: %d", mode);
+            eend(1, NULL);
+            return false;
+        }
+
+        // Start Plymouth daemon using centralised command system
+        rv = ply_execute_command(PLY_CMD_START_DAEMON, NULL, NULL, mode);
+
         char status_msg[160];
         status_msg[0] = '\0';
         if (rv != 0) {
@@ -166,13 +296,21 @@ bool ply_start(int mode)
         }
         eend(rv, "%s", status_msg);
 
+        // Only show splash if daemon started successfully
         if (rv == 0) {
-            int rv_splash = command("/bin/plymouth --show-splash");
+            int rv_splash = ply_execute_command(PLY_CMD_SHOW_SPLASH, NULL, NULL, 0);
             if (rv_splash != 0) {
                 PLY_ERROR("plymouth --show-splash failed: rc=%d", rv_splash);
+                // Try to clean up the daemon we just started
+                ply_execute_command(PLY_CMD_QUIT, NULL, NULL, 0);
                 return false;
             }
+            DBG("Plymouth splash screen activated for %s mode", mode_str);
+        } else {
+            return false;
         }
+    } else {
+        DBG("Plymouth daemon already running");
     }
 
     return true;
@@ -181,7 +319,9 @@ bool ply_start(int mode)
 
 bool ply_update_status(int hook, const char* name)
 {
-    return (commandf("/bin/plymouth update --status=%d-%s", hook, name) == 0);
+    char hook_str[16];
+    snprintf(hook_str, sizeof(hook_str), "%d", hook);
+    return (ply_execute_command(PLY_CMD_UPDATE_STATUS, hook_str, name, 0) == 0);
 }
 
 
@@ -196,7 +336,7 @@ bool ply_update_rootfs_rw()
         return false;
     }
 
-    return (command("/bin/plymouth update-root-fs --read-write") == 0);
+    return (ply_execute_command(PLY_CMD_UPDATE_ROOTFS_RW, NULL, NULL, 0) == 0);
 }
 
 

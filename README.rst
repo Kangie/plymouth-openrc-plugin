@@ -19,6 +19,20 @@ reference for those that want to change them.
 
 .. code-block:: console
 
-    user@workstation $ meson setup builddir --prefix=/usr -Ddebug=true -Dpid-file=/run/plymouth/plymouth-openrc-plugin.pid -Drun-dir=/run/plymouth
+    user@workstation $ meson setup builddir --prefix=/usr \
+        -Ddebug=true \
+        -Dpid-file=/run/plymouth/plymouth-openrc-plugin.pid \
+        -Drun-dir=/run/plymouth \
+        -Dplymouth-binary=/bin/plymouth \
+        -Dplymouthd-binary=/sbin/plymouthd
     user@workstation $ ninja -C builddir
     user@workstation $ sudo ninja -C builddir install
+
+Configuration Options
+====================
+
+- ``debug``: Enable debug output (default: false)
+- ``pid-file``: Path to PID file (default: /run/plymouth/plymouth-openrc-plugin.pid)
+- ``run-dir``: Run directory for Plymouth (default: /run/plymouth)
+- ``plymouth-binary``: Path to plymouth client binary (default: /bin/plymouth)
+- ``plymouthd-binary``: Path to plymouthd daemon binary (default: /sbin/plymouthd)
