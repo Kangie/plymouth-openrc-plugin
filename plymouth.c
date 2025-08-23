@@ -49,6 +49,13 @@
 #define MAX_SERVICE_NAME_LEN 64
 #define RWDIR (R_OK | W_OK | X_OK)
 
+// Command execution constants
+#define MAX_ARGS 16                    // Maximum arguments for command execution
+#define DAEMON_INIT_SLEEP_US 100000    // 100ms sleep for daemon initialization
+#define STATUS_MSG_BUF_SIZE 160        // Buffer size for status messages
+#define HOOK_STR_BUF_SIZE 16          // Buffer size for hook string conversion
+#define RUN_DIR_MODE 0755             // Directory permissions for run directory
+
 // Plymouth binary paths
 #ifndef PLYMOUTH_BINARY
 #define PLYMOUTH_BINARY "/bin/plymouth"
@@ -90,7 +97,7 @@ static int ply_execute_command(ply_command_t cmd_type, const char *arg1, const c
     extern char **environ;
     pid_t pid;
     int status;
-    char *args[16];  // Max args we'll need
+    char *args[MAX_ARGS];  // Max args we'll need
     int arg_count = 0;
     bool is_daemon = false;
 
@@ -187,7 +194,7 @@ static int ply_execute_command(ply_command_t cmd_type, const char *arg1, const c
         DBG("Started daemon process %d, not waiting for exit", (int)pid);
 
         // Brief sleep to let daemon initialize
-        usleep(100000);  // 100ms
+        usleep(DAEMON_INIT_SLEEP_US);
 
         // Check if daemon is still running (didn't immediately crash)
         int check_status;
@@ -258,7 +265,7 @@ bool ply_start(int mode)
 
         // Ensure run directory exists with proper permissions
         if(access(RUN_DIR, RWDIR) != 0) {
-            if(mkdir(RUN_DIR, 0755) != 0) {
+            if(mkdir(RUN_DIR, RUN_DIR_MODE) != 0) {
                 PLY_ERROR("Couldn't create %s: %s", RUN_DIR, strerror(errno));
                 eend(1, NULL);
                 return false;
@@ -276,7 +283,7 @@ bool ply_start(int mode)
         // Start Plymouth daemon using centralised command system
         rv = ply_execute_command(PLY_CMD_START_DAEMON, NULL, NULL, mode);
 
-        char status_msg[160];
+        char status_msg[STATUS_MSG_BUF_SIZE];
         status_msg[0] = '\0';
         if (rv != 0) {
             if (rv == -1) {
@@ -319,7 +326,7 @@ bool ply_start(int mode)
 
 bool ply_update_status(int hook, const char* name)
 {
-    char hook_str[16];
+    char hook_str[HOOK_STR_BUF_SIZE];
     snprintf(hook_str, sizeof(hook_str), "%d", hook);
     return (ply_execute_command(PLY_CMD_UPDATE_STATUS, hook_str, name, 0) == 0);
 }
