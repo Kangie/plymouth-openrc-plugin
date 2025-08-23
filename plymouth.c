@@ -26,12 +26,14 @@
 #include <unistd.h>
 #include <sys/stat.h>
 
+#include <stdbool.h>
+
 #include "config.h"
 
 #ifdef DEBUG
-#    define DBG(x) einfo("[plymouth-plugin] " x)
+#    define DBG(fmt, ...) einfo("[plymouth-plugin] " fmt, ##__VA_ARGS__)
 #else
-#    define DBG(x)
+#    define DBG(fmt, ...) do { (void)sizeof(fmt); } while (0)
 #endif
 
 #define BUFFER_SIZE 300
