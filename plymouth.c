@@ -319,70 +319,71 @@ bool ply_start(int mode)
     const char* mode_str = (mode == PLY_MODE_BOOT) ? "boot" :
                            (mode == PLY_MODE_SHUTDOWN) ? "shutdown" : "unknown";
 
-    if(!ply_ping()) {
-        ebegin("Starting plymouthd");
+    if(ply_ping()) {
+        DBG("Plymouth daemon already running");
+        return true;
+    }
 
-        // Validate Plymouth binaries before proceeding
-        if (!ply_validate_binaries()) {
-            eend(1, "Plymouth binaries validation failed");
-            return false;
-        }
+    ebegin("Starting plymouthd");
 
-        // Ensure run directory exists with proper permissions
-        if(access(RUN_DIR, RWDIR) != 0) {
-            if(mkdir(RUN_DIR, RUN_DIR_MODE) != 0) {
-                PLY_ERROR("Couldn't create %s: %s", RUN_DIR, strerror(errno));
-                eend(1, NULL);
-                return false;
-            }
-            DBG("Created run directory %s", RUN_DIR);
-        }
+    // Validate Plymouth binaries before proceeding
+    if (!ply_validate_binaries()) {
+        eend(1, "Plymouth binaries validation failed");
+        return false;
+    }
 
-        // Validate mode before proceeding
-        if(mode != PLY_MODE_BOOT && mode != PLY_MODE_SHUTDOWN) {
-            PLY_ERROR("Invalid Plymouth mode: %d", mode);
+    // Ensure run directory exists with proper permissions
+    if(access(RUN_DIR, RWDIR) != 0) {
+        if(mkdir(RUN_DIR, RUN_DIR_MODE) != 0) {
+            PLY_ERROR("Couldn't create %s: %s", RUN_DIR, strerror(errno));
             eend(1, NULL);
             return false;
         }
+        DBG("Created run directory %s", RUN_DIR);
+    }
 
-        // Start Plymouth daemon using centralised command system
-        rv = ply_execute_command(PLY_CMD_START_DAEMON, NULL, NULL, mode);
+    // Validate mode before proceeding
+    if(mode != PLY_MODE_BOOT && mode != PLY_MODE_SHUTDOWN) {
+        PLY_ERROR("Invalid Plymouth mode: %d", mode);
+        eend(1, NULL);
+        return false;
+    }
 
-        char status_msg[STATUS_MSG_BUF_SIZE];
-        status_msg[0] = '\0';
-        if (rv != 0) {
-            if (rv == -1) {
-                snprintf(status_msg, sizeof status_msg,
-                         "plymouthd(%s) failed: %s", mode_str, strerror(errno));
-            } else if (WIFEXITED(rv)) {
-                snprintf(status_msg, sizeof status_msg,
-                         "plymouthd(%s) failed: exit=%d", mode_str, WEXITSTATUS(rv));
-            } else if (WIFSIGNALED(rv)) {
-                snprintf(status_msg, sizeof status_msg,
-                         "plymouthd(%s) killed by signal %d%s",
-                         mode_str, WTERMSIG(rv), WCOREDUMP(rv) ? " (core dumped)" : "");
-            } else {
-                snprintf(status_msg, sizeof status_msg,
-                         "plymouthd(%s) failed: status=0x%x", mode_str, rv);
-            }
-        }
-        eend(rv, "%s", status_msg);
+    // Start Plymouth daemon using centralised command system
+    rv = ply_execute_command(PLY_CMD_START_DAEMON, NULL, NULL, mode);
 
-        // Only show splash if daemon started successfully
-        if (rv == PLY_SUCCESS) {
-            int rv_splash = ply_execute_command(PLY_CMD_SHOW_SPLASH, NULL, NULL, 0);
-            if (rv_splash != PLY_SUCCESS) {
-                PLY_ERROR("plymouth --show-splash failed: rc=%d", rv_splash);
-                // Try to clean up the daemon we just started
-                ply_execute_command(PLY_CMD_QUIT, NULL, NULL, 0);
-                return false;
-            }
-            DBG("Plymouth splash screen activated for %s mode", mode_str);
+    char status_msg[STATUS_MSG_BUF_SIZE];
+    status_msg[0] = '\0';
+    if (rv != 0) {
+        if (rv == -1) {
+            snprintf(status_msg, sizeof status_msg,
+                        "plymouthd(%s) failed: %s", mode_str, strerror(errno));
+        } else if (WIFEXITED(rv)) {
+            snprintf(status_msg, sizeof status_msg,
+                        "plymouthd(%s) failed: exit=%d", mode_str, WEXITSTATUS(rv));
+        } else if (WIFSIGNALED(rv)) {
+            snprintf(status_msg, sizeof status_msg,
+                        "plymouthd(%s) killed by signal %d%s",
+                        mode_str, WTERMSIG(rv), WCOREDUMP(rv) ? " (core dumped)" : "");
         } else {
+            snprintf(status_msg, sizeof status_msg,
+                        "plymouthd(%s) failed: status=0x%x", mode_str, rv);
+        }
+    }
+    eend(rv, "%s", status_msg);
+
+    // Only show splash if daemon started successfully
+    if (rv == PLY_SUCCESS) {
+        int rv_splash = ply_execute_command(PLY_CMD_SHOW_SPLASH, NULL, NULL, 0);
+        if (rv_splash != PLY_SUCCESS) {
+            PLY_ERROR("plymouth --show-splash failed: rc=%d", rv_splash);
+            // Try to clean up the daemon we just started
+            ply_execute_command(PLY_CMD_QUIT, NULL, NULL, 0);
             return false;
         }
+        DBG("Plymouth splash screen activated for %s mode", mode_str);
     } else {
-        DBG("Plymouth daemon already running");
+        return false;
     }
 
     return true;
